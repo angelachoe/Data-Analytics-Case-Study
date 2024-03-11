@@ -10,6 +10,7 @@ hourly_calories <- read_csv("hourlyCalories_merged.csv")
 hourly_intensities <- read_csv("hourlyIntensities_merged.csv")
 sleep <- read_csv("sleepDay_merged.csv")
 weight_log <- read_csv("weightLogInfo_merged.csv")
+hourly_steps <- read_csv("hourlySteps_merged.csv")
 
 #Looking to make sure the data was imported correctly
 head(daily_activity)
@@ -42,4 +43,71 @@ bellabeat_df <- bellabeat_df %>%
 #Checking our variables one last time 
 str(bellabeat_df)
 
+#Adding new columns for Intensity hours
+daily_activity_v2 <- mutate(daily_activity, VeryActiveHour = VeryActiveMinutes / 60) %>% 
+                     mutate(daily_activity, FairlyActiveHour = FairlyActiveMinutes / 60) %>% 
+                     mutate(daily_activity, LightlyActiveHour = LightlyActiveMinutes / 60)
+
+bellabeat_df <- merge(merge(daily_activity_v2,sleep, by = c('Id', 'Date'), all = TRUE),
+                      weight_log, by = c('Id', 'Date'), all = TRUE)
+
 summary(bellabeat_df)
+
+#Analysis 
+#1 Time for each Exercise Activity Intensity
+
+#the rstudios version I am using does not allow install.packages("scales"), so I will be manually including percents. 
+I calculated these numbers on excel 
+sum_active_min_v3 <- data.frame(
+  intensity = c("Light Activity 85%", "Moderate Activity 6%", "Heavy Activity 9%"),
+  value = c(sum(bellabeat_df$LightlyActiveMinutes),
+            sum(bellabeat_df$FairlyActiveMinutes), 
+            sum(bellabeat_df$VeryActiveMinutes)))
+
+require("RColorBrewer")
+pie(sum_active_min_v3$value, 
+    labels = sum_active_min_v3$intensity, 
+    col = brewer.pal(3,"Set2"), 
+    main = "Percent of Time Spent on Each Intensity", 
+    radius = 1)
+
+#2 Calories Intake and Total Daily Steps
+ggplot(data = bellabeat_df) + 
+       geom_point(mapping = aes(x = TotalSteps, y = Calories), color = 'orange') +
+  labs(title="Calories Intake and Total Daily Steps",
+       caption = 'Data Source: FitBit Fitness Tracker Data') +
+  theme(plot.title = element_text(hjust = 0.5, size = 15, face = "bold"))
+
+#3Activity during the week
+steps <- hourly_steps %>%
+  rename(date_time = ActivityHour) %>% 
+  mutate(date_time = as.POSIXct(date_time, format= "%m/%d/%Y %I:%M:%S %p", 
+                                tz= Sys.timezone()))
+
+steps <- steps %>% 
+  separate(date_time, into = c("date", "time"), sep = " ") %>% 
+  mutate(date = ymd(date))
+
+steps$time <- ifelse(is.na(steps$time), "00:00:00", steps$time)
+
+#Creating a new column for weekdays
+steps_weekday <- steps %>% 
+  mutate(weekday = weekdays(date)) %>% 
+  group_by(weekday, time) %>% 
+  summarize(average_steps = mean(StepTotal), .groups = 'drop')
+
+steps_weekday$weekday <- ordered(steps_weekday$weekday, 
+  levels=c("Saturday", "Friday", "Thursday", "Wednesday", "Tuesday", "Monday", "Sunday"))
+
+ggplot(steps_weekday, aes(x= time, y= weekday, fill=average_steps)) +
+  labs(title = "Steps During the Week",
+       x = "Time",
+       y = " ", fill = "average\nsteps", 
+       caption = "Data Source: FitBit Fitness Tracker Data") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_fill_gradient(low = "white", high = "purple4") +
+  geom_tile(color = "white", lwd = .3, linetype = 1) +
+  coord_fixed() +
+  theme(plot.title= element_text(hjust= 0.5,vjust= 0.8, size=16),
+        panel.background= element_blank())
+
